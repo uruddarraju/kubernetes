@@ -26,13 +26,14 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/password/passwordfile"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/basicauth"
+	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/keystone"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/union"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/request/x509"
 	"github.com/GoogleCloudPlatform/kubernetes/plugin/pkg/auth/authenticator/token/tokenfile"
 )
 
 // NewAuthenticator returns an authenticator.Request or an error
-func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyFile string, serviceAccountLookup bool, storage tools.StorageInterface) (authenticator.Request, error) {
+func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyFile string, serviceAccountLookup bool, storage tools.StorageInterface, keystoneURL string) (authenticator.Request, error) {
 	var authenticators []authenticator.Request
 
 	if len(basicAuthFile) > 0 {
@@ -65,6 +66,14 @@ func NewAuthenticator(basicAuthFile, clientCAFile, tokenFile, serviceAccountKeyF
 			return nil, err
 		}
 		authenticators = append(authenticators, serviceAccountAuth)
+	}
+
+	if len(keystoneURL) > 0 {
+		keystoneAuth, err := newAuthenticatorFromKeystoneURL(keystoneURL)
+		if err != nil {
+			return nil, err
+		}
+		authenticators = append(authenticators, keystoneAuth)
 	}
 
 	switch len(authenticators) {
@@ -132,4 +141,9 @@ func newAuthenticatorFromClientCAFile(clientCAFile string) (authenticator.Reques
 	opts.Roots = roots
 
 	return x509.New(opts, x509.CommonNameUserConversion), nil
+}
+
+// newAuthenticatorFromTokenFile returns an authenticator.Request or an error
+func newAuthenticatorFromKeystoneURL(keystoneConfigFile string) (authenticator.Request, error) {
+	return keystone.NewKeystoneAuthenticator(keystoneConfigFile)
 }
