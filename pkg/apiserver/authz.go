@@ -18,9 +18,9 @@ package apiserver
 
 import (
 	"errors"
-
 	"k8s.io/kubernetes/pkg/auth/authorizer"
 	"k8s.io/kubernetes/pkg/auth/authorizer/abac"
+	"k8s.io/kubernetes/pkg/auth/authorizer/union"
 )
 
 // Attributes implements authorizer.Attributes interface.
@@ -65,19 +65,29 @@ var AuthorizationModeChoices = []string{ModeAlwaysAllow, ModeAlwaysDeny, ModeABA
 
 // NewAuthorizerFromAuthorizationConfig returns the right sort of authorizer.Authorizer
 // based on the authorizationMode xor an error.  authorizationMode should be one of AuthorizationModeChoices.
-func NewAuthorizerFromAuthorizationConfig(authorizationMode string, authorizationPolicyFile string) (authorizer.Authorizer, error) {
-	if authorizationPolicyFile != "" && authorizationMode != "ABAC" {
-		return nil, errors.New("Cannot specify --authorization-policy-file without mode ABAC")
+func NewAuthorizerFromAuthorizationConfig(authorizationModes []string, authorizationPolicyFile string) (authorizer.Authorizer, error) {
+
+	var authorizers []authorizer.Authorizer
+
+	for _, authorizationMode := range authorizationModes {
+		// Keep cases in sync with constant list above.
+		switch authorizationMode {
+		case ModeAlwaysAllow:
+			authorizers = append(authorizers, NewAlwaysAllowAuthorizer())
+		case ModeAlwaysDeny:
+			authorizers = append(authorizers, NewAlwaysDenyAuthorizer())
+		case ModeABAC:
+			if authorizationPolicyFile == "" {
+				return nil, errors.New("ABAC's authorization policy file not passed")
+			}
+			abacAuthorizer, err := abac.NewFromFile(authorizationPolicyFile)
+			if err != nil {
+				return nil, err
+			}
+			authorizers = append(authorizers, abacAuthorizer)
+		default:
+			return nil, errors.New("Unknown authorization mode")
+		}
 	}
-	// Keep cases in sync with constant list above.
-	switch authorizationMode {
-	case ModeAlwaysAllow:
-		return NewAlwaysAllowAuthorizer(), nil
-	case ModeAlwaysDeny:
-		return NewAlwaysDenyAuthorizer(), nil
-	case ModeABAC:
-		return abac.NewFromFile(authorizationPolicyFile)
-	default:
-		return nil, errors.New("Unknown authorization mode")
-	}
+	return union.New(authorizers...), nil
 }
